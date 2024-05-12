@@ -33,8 +33,10 @@ cfg_if::cfg_if! {
 
 pub use self::net_impl::TcpSocket;
 pub use self::net_impl::UdpSocket;
+pub use self::net_impl::{
+    add_membership, dns_query, from_core_sockaddr, into_core_sockaddr, poll_interfaces,
+};
 pub use self::net_impl::{bench_receive, bench_transmit};
-pub use self::net_impl::{dns_query, from_core_sockaddr, into_core_sockaddr, poll_interfaces};
 pub use smoltcp::time::Duration;
 pub use smoltcp::wire::{IpAddress as IpAddr, IpEndpoint as SocketAddr, Ipv4Address as Ipv4Addr};
 

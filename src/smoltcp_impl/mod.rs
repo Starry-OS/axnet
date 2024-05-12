@@ -6,6 +6,7 @@ mod listen_table;
 mod tcp;
 mod udp;
 use alloc::vec;
+use axerrno::{AxError, AxResult};
 use core::cell::RefCell;
 use core::ops::DerefMut;
 
@@ -16,7 +17,7 @@ use driver_net::{DevError, NetBufPtr};
 use lazy_init::LazyInit;
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
-use smoltcp::socket::{self, AnySocket};
+use smoltcp::socket::{self, AnySocket, Socket};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr};
 
@@ -91,11 +92,11 @@ impl<'a> SocketSetWrapper<'a> {
 
     pub fn new_udp_socket() -> socket::udp::Socket<'a> {
         let udp_rx_buffer = socket::udp::PacketBuffer::new(
-            vec![socket::udp::PacketMetadata::EMPTY; 8],
+            vec![socket::udp::PacketMetadata::EMPTY; 256],
             vec![0; UDP_RX_BUF_LEN],
         );
         let udp_tx_buffer = socket::udp::PacketBuffer::new(
-            vec![socket::udp::PacketMetadata::EMPTY; 8],
+            vec![socket::udp::PacketMetadata::EMPTY; 256],
             vec![0; UDP_TX_BUF_LEN],
         );
         socket::udp::Socket::new(udp_rx_buffer, udp_tx_buffer)
@@ -128,6 +129,21 @@ impl<'a> SocketSetWrapper<'a> {
         let mut set = self.0.lock();
         let socket = set.get_mut(handle);
         f(socket)
+    }
+
+    pub fn bind_check(&self, addr: IpAddress, _port: u16) -> AxResult {
+        let mut sockets = self.0.lock();
+        for item in sockets.iter_mut() {
+            match item.1 {
+                Socket::Udp(s) => {
+                    if s.endpoint().addr == Some(addr) {
+                        return Err(AxError::AddrInUse);
+                    }
+                }
+                _ => continue,
+            };
+        }
+        Ok(())
     }
 
     pub fn poll_interfaces(&self) {
@@ -332,6 +348,20 @@ pub fn bench_transmit() {
 pub fn bench_receive() {
     #[cfg(not(feature = "ip"))]
     ETH0.dev.lock().bench_receive_bandwidth();
+}
+
+/// Add multicast_addr to the loopback device.
+pub fn add_membership(_multicast_addr: IpAddress, _interface_addr: IpAddress) {
+    #[cfg(feature = "ip")]
+    {
+        let timestamp =
+            Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
+        let _ = LOOPBACK.lock().join_multicast_group(
+            LOOPBACK_DEV.lock().deref_mut(),
+            _multicast_addr,
+            timestamp,
+        );
+    }
 }
 
 pub(crate) fn init(_net_dev: AxNetDevice) {

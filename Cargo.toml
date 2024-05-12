@@ -29,17 +29,18 @@ axsync = { git = "https://github.com/Starry-OS/axsync.git" }
 axtask = { git = "https://github.com/Starry-OS/axtask.git" }
 axdriver = { git = "https://github.com/Starry-OS/axdriver.git", features = ["net"] }
 axio = { git = "https://github.com/Starry-OS/axio.git" }
+axprocess = { git = "https://github.com/Starry-OS/axprocess.git" }
 
 [dependencies.smoltcp]
 git = "https://github.com/rcore-os/smoltcp.git"
-rev = "2ade274"
+rev = "b7134a3"
 default-features = false
 features = [
   "alloc", "log",   # no std
   "medium-ethernet",
   "medium-ip",
   "proto-ipv4",
-  "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dns",
+  "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dns", "proto-igmp",
   # "fragmentation-buffer-size-65536", "proto-ipv4-fragmentation",
   # "reassembly-buffer-size-65536", "reassembly-buffer-count-32",
   # "assembler-max-segment-count-32",
