@@ -316,6 +316,7 @@ impl UdpSocket {
             f()
         } else {
             loop {
+                #[cfg(feature = "monolithic")]
                 if axprocess::signal::current_have_signals() {
                     return Err(AxError::Interrupted);
                 }
