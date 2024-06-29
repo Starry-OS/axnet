@@ -118,6 +118,28 @@ impl TcpSocket {
         self.nonblock.store(nonblocking, Ordering::Release);
     }
 
+    /// To get the address pair of the socket.
+    ///
+    /// Returns the local and remote endpoint pair.
+    fn get_endpoint_pair(
+        &self,
+        remote_addr: SocketAddr,
+    ) -> Result<(IpListenEndpoint, IpEndpoint), AxError> {
+        // TODO: check remote addr unreachable
+        let mut remote_endpoint = from_core_sockaddr(remote_addr);
+        let mut bound_endpoint = self.bound_endpoint()?;
+        if bound_endpoint.addr.is_none() {
+            // If the remote addr is unspecified, we should copy the local addr.
+            // If the local addr is unspecified too, we should use the loopback interface.
+            if remote_endpoint.addr.is_unspecified() {
+                remote_endpoint.addr =
+                    smoltcp::wire::IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(127, 0, 0, 1));
+            }
+            bound_endpoint.addr = Some(remote_endpoint.addr);
+        }
+        Ok((bound_endpoint, remote_endpoint))
+    }
+
     /// Connects to the given address and port.
     ///
     /// The local port is generated automatically.
@@ -128,8 +150,7 @@ impl TcpSocket {
                 .unwrap_or_else(|| SOCKET_SET.add(SocketSetWrapper::new_tcp_socket()));
 
             // TODO: check remote addr unreachable
-            let remote_endpoint = from_core_sockaddr(remote_addr);
-            let bound_endpoint = self.bound_endpoint()?;
+            let (bound_endpoint, remote_endpoint) = self.get_endpoint_pair(remote_addr)?;
             #[cfg(not(feature = "ip"))]
             let iface = &super::ETH0.iface;
 
@@ -522,6 +543,12 @@ impl TcpSocket {
     /// Whether the socket is connected.
     pub fn is_connected(&self) -> bool {
         self.get_state() == STATE_CONNECTED
+    }
+
+    #[inline]
+    /// Whether the socket is closed.
+    pub fn is_closed(&self) -> bool {
+        self.get_state() == STATE_CLOSED
     }
 
     #[inline]
