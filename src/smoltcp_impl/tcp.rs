@@ -126,8 +126,11 @@ impl TcpSocket {
         remote_addr: SocketAddr,
     ) -> Result<(IpListenEndpoint, IpEndpoint), AxError> {
         // TODO: check remote addr unreachable
+        #[allow(unused_mut)]
         let mut remote_endpoint = from_core_sockaddr(remote_addr);
+        #[allow(unused_mut)]
         let mut bound_endpoint = self.bound_endpoint()?;
+        #[cfg(feature = "ip")]
         if bound_endpoint.addr.is_none() {
             // If the remote addr is unspecified, we should copy the local addr.
             // If the local addr is unspecified too, we should use the loopback interface.
@@ -149,8 +152,9 @@ impl TcpSocket {
             let handle = unsafe { self.handle.get().read() }
                 .unwrap_or_else(|| SOCKET_SET.add(SocketSetWrapper::new_tcp_socket()));
 
-            // TODO: check remote addr unreachable
+            // // TODO: check remote addr unreachable
             let (bound_endpoint, remote_endpoint) = self.get_endpoint_pair(remote_addr)?;
+
             #[cfg(not(feature = "ip"))]
             let iface = &super::ETH0.iface;
 
