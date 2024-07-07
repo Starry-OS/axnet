@@ -311,7 +311,7 @@ impl TcpSocket {
     ///
     /// It won't change TCP state.
     /// It won't affect unconnected sockets (listener).
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         let handle = match unsafe { self.handle.get().read() } {
             Some(h) => h,
             None => return,
@@ -485,7 +485,7 @@ impl TcpSocket {
     /// If the socket is not connected, it will return None.
     ///
     /// Or it will return the result of the given function.
-    pub fn with_socket_mut<R>(&mut self, f: impl FnOnce(Option<&mut tcp::Socket>) -> R) -> R {
+    pub fn with_socket_mut<R>(&self, f: impl FnOnce(Option<&mut tcp::Socket>) -> R) -> R {
         let handle = unsafe { self.handle.get().read() };
 
         match handle {
