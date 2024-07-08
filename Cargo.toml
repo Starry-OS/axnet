@@ -43,6 +43,7 @@ features = [
   "medium-ethernet",
   "medium-ip",
   "proto-ipv4",
+  "proto-ipv6",
   "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dns", "proto-igmp",
   # "fragmentation-buffer-size-65536", "proto-ipv4-fragmentation",
   # "reassembly-buffer-size-65536", "reassembly-buffer-count-32",
