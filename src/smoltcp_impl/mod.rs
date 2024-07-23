@@ -50,21 +50,16 @@ const LISTEN_QUEUE_SIZE: usize = 512;
 static LISTEN_TABLE: LazyInit<ListenTable> = LazyInit::new();
 static SOCKET_SET: LazyInit<SocketSetWrapper> = LazyInit::new();
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "ip")] {
-        mod loopback;
-        static LOOPBACK_DEV: LazyInit<Mutex<LoopbackDev>> = LazyInit::new();
-        static LOOPBACK: LazyInit<Mutex<Interface>> = LazyInit::new();
-        use self::loopback::LoopbackDev;
-    }
-    else {
-        const IP: &str = env_or_default!("AX_IP");
-        const GATEWAY: &str = env_or_default!("AX_GW");
-        const IP_PREFIX: u8 = 24;
+mod loopback;
+static LOOPBACK_DEV: LazyInit<Mutex<LoopbackDev>> = LazyInit::new();
+static LOOPBACK: LazyInit<Mutex<Interface>> = LazyInit::new();
+use self::loopback::LoopbackDev;
 
-        static ETH0: LazyInit<InterfaceWrapper> = LazyInit::new();
-    }
-}
+const IP: &str = env_or_default!("AX_IP");
+const GATEWAY: &str = env_or_default!("AX_GW");
+const IP_PREFIX: u8 = 24;
+
+static ETH0: LazyInit<InterfaceWrapper> = LazyInit::new();
 
 struct SocketSetWrapper<'a>(Mutex<SocketSet<'a>>);
 
@@ -147,16 +142,15 @@ impl<'a> SocketSetWrapper<'a> {
     }
 
     pub fn poll_interfaces(&self) {
-        #[cfg(feature = "ip")]
-        {
-            let timestamp =
-                Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
-            let mut sockets = self.0.lock();
-            LOOPBACK
-                .lock()
-                .poll(timestamp, LOOPBACK_DEV.lock().deref_mut(), &mut sockets);
-        }
-        #[cfg(not(feature = "ip"))]
+        let timestamp =
+            Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
+
+        LOOPBACK.lock().poll(
+            timestamp,
+            LOOPBACK_DEV.lock().deref_mut(),
+            &mut self.0.lock(),
+        );
+
         ETH0.poll(&self.0);
     }
 
@@ -341,66 +335,54 @@ pub fn poll_interfaces() {
 
 /// Benchmark raw socket transmit bandwidth.
 pub fn bench_transmit() {
-    #[cfg(not(feature = "ip"))]
     ETH0.dev.lock().bench_transmit_bandwidth();
 }
 
 /// Benchmark raw socket receive bandwidth.
 pub fn bench_receive() {
-    #[cfg(not(feature = "ip"))]
     ETH0.dev.lock().bench_receive_bandwidth();
 }
 
 /// Add multicast_addr to the loopback device.
-pub fn add_membership(_multicast_addr: IpAddress, _interface_addr: IpAddress) {
-    #[cfg(feature = "ip")]
-    {
-        let timestamp =
-            Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
-        let _ = LOOPBACK.lock().join_multicast_group(
-            LOOPBACK_DEV.lock().deref_mut(),
-            _multicast_addr,
-            timestamp,
-        );
-    }
+pub fn add_membership(multicast_addr: IpAddress, _interface_addr: IpAddress) {
+    let timestamp = Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
+    let _ = LOOPBACK.lock().join_multicast_group(
+        LOOPBACK_DEV.lock().deref_mut(),
+        multicast_addr,
+        timestamp,
+    );
 }
 
 pub(crate) fn init(_net_dev: AxNetDevice) {
-    #[cfg(feature = "ip")]
-    {
-        let mut device = LoopbackDev::new(Medium::Ip);
-        let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+    let mut device = LoopbackDev::new(Medium::Ip);
+    let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
 
-        let mut iface = Interface::new(
-            config,
-            &mut device,
-            Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64),
-        );
-        iface.update_ip_addrs(|ip_addrs| {
-            ip_addrs
-                .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
-                .unwrap();
-        });
-        LOOPBACK.init_by(Mutex::new(iface));
-        LOOPBACK_DEV.init_by(Mutex::new(device));
-    }
+    let mut iface = Interface::new(
+        config,
+        &mut device,
+        Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64),
+    );
+    iface.update_ip_addrs(|ip_addrs| {
+        ip_addrs
+            .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
+            .unwrap();
+    });
+    LOOPBACK.init_by(Mutex::new(iface));
+    LOOPBACK_DEV.init_by(Mutex::new(device));
 
-    #[cfg(not(feature = "ip"))]
-    {
-        let ether_addr = EthernetAddress(_net_dev.mac_address().0);
-        let eth0 = InterfaceWrapper::new("eth0", _net_dev, ether_addr);
+    let ether_addr = EthernetAddress(_net_dev.mac_address().0);
+    let eth0 = InterfaceWrapper::new("eth0", _net_dev, ether_addr);
 
-        let ip = IP.parse().expect("invalid IP address");
-        let gateway = GATEWAY.parse().expect("invalid gateway IP address");
-        eth0.setup_ip_addr(ip, IP_PREFIX);
-        eth0.setup_gateway(gateway);
+    let ip = IP.parse().expect("invalid IP address");
+    let gateway = GATEWAY.parse().expect("invalid gateway IP address");
+    eth0.setup_ip_addr(ip, IP_PREFIX);
+    eth0.setup_gateway(gateway);
 
-        ETH0.init_by(eth0);
-        info!("created net interface {:?}:", ETH0.name());
-        info!("  ether:    {}", ETH0.ethernet_address());
-        info!("  ip:       {}/{}", ip, IP_PREFIX);
-        info!("  gateway:  {}", gateway);
-    }
+    ETH0.init_by(eth0);
+    info!("created net interface {:?}:", ETH0.name());
+    info!("  ether:    {}", ETH0.ethernet_address());
+    info!("  ip:       {}/{}", ip, IP_PREFIX);
+    info!("  gateway:  {}", gateway);
 
     SOCKET_SET.init_by(SocketSetWrapper::new());
     LISTEN_TABLE.init_by(ListenTable::new());

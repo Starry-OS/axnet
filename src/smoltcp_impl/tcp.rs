@@ -121,27 +121,27 @@ impl TcpSocket {
     /// To get the address pair of the socket.
     ///
     /// Returns the local and remote endpoint pair.
-    fn get_endpoint_pair(
-        &self,
-        remote_addr: SocketAddr,
-    ) -> Result<(IpListenEndpoint, IpEndpoint), AxError> {
-        // TODO: check remote addr unreachable
-        #[allow(unused_mut)]
-        let mut remote_endpoint = from_core_sockaddr(remote_addr);
-        #[allow(unused_mut)]
-        let mut bound_endpoint = self.bound_endpoint()?;
-        #[cfg(feature = "ip")]
-        if bound_endpoint.addr.is_none() {
-            // If the remote addr is unspecified, we should copy the local addr.
-            // If the local addr is unspecified too, we should use the loopback interface.
-            if remote_endpoint.addr.is_unspecified() {
-                remote_endpoint.addr =
-                    smoltcp::wire::IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(127, 0, 0, 1));
-            }
-            bound_endpoint.addr = Some(remote_endpoint.addr);
-        }
-        Ok((bound_endpoint, remote_endpoint))
-    }
+    // fn get_endpoint_pair(
+    //     &self,
+    //     remote_addr: SocketAddr,
+    // ) -> Result<(IpListenEndpoint, IpEndpoint), AxError> {
+    //     // TODO: check remote addr unreachable
+    //     #[allow(unused_mut)]
+    //     let mut remote_endpoint = from_core_sockaddr(remote_addr);
+    //     #[allow(unused_mut)]
+    //     let mut bound_endpoint = self.bound_endpoint()?;
+    //     // #[cfg(feature = "ip")]
+    //     if bound_endpoint.addr.is_none() && remote_endpoint.addr.as_bytes()[0] == 127 {
+    //         // If the remote addr is unspecified, we should copy the local addr.
+    //         // If the local addr is unspecified too, we should use the loopback interface.
+    //         if remote_endpoint.addr.is_unspecified() {
+    //             remote_endpoint.addr =
+    //                 smoltcp::wire::IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(127, 0, 0, 1));
+    //         }
+    //         bound_endpoint.addr = Some(remote_endpoint.addr);
+    //     }
+    //     Ok((bound_endpoint, remote_endpoint))
+    // }
 
     /// Connects to the given address and port.
     ///
@@ -153,13 +153,19 @@ impl TcpSocket {
                 .unwrap_or_else(|| SOCKET_SET.add(SocketSetWrapper::new_tcp_socket()));
 
             // // TODO: check remote addr unreachable
-            let (bound_endpoint, remote_endpoint) = self.get_endpoint_pair(remote_addr)?;
+            // let (bound_endpoint, remote_endpoint) = self.get_endpoint_pair(remote_addr)?;
+            let remote_endpoint = from_core_sockaddr(remote_addr);
+            let bound_endpoint = self.bound_endpoint()?;
+            info!("bound endpoint: {:?}", bound_endpoint);
+            info!("remote endpoint: {:?}", remote_endpoint);
+            warn!("Temporarily net bridge used");
+            let iface = if remote_endpoint.addr.as_bytes()[0] == 127 {
+                super::LOOPBACK.try_get().unwrap()
+            } else {
+                info!("Use eth net");
+                &super::ETH0.iface
+            };
 
-            #[cfg(not(feature = "ip"))]
-            let iface = &super::ETH0.iface;
-
-            #[cfg(feature = "ip")]
-            let iface = super::LOOPBACK.try_get().unwrap();
             let (local_endpoint, remote_endpoint) = SOCKET_SET
                 .with_socket_mut::<tcp::Socket, _, _>(handle, |socket| {
                     socket
