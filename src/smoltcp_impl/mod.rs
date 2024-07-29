@@ -130,6 +130,12 @@ impl<'a> SocketSetWrapper<'a> {
         let mut sockets = self.0.lock();
         for item in sockets.iter_mut() {
             match item.1 {
+                Socket::Tcp(s) => {
+                    let local_addr = s.get_bound_endpoint();
+                    if local_addr.addr == Some(addr) {
+                        return Err(AxError::AddrInUse);
+                    }
+                }
                 Socket::Udp(s) => {
                     if s.endpoint().addr == Some(addr) {
                         return Err(AxError::AddrInUse);

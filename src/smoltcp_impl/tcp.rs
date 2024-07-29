@@ -43,6 +43,7 @@ pub struct TcpSocket {
     local_addr: UnsafeCell<IpEndpoint>,
     peer_addr: UnsafeCell<IpEndpoint>,
     nonblock: AtomicBool,
+    reuse_addr: AtomicBool,
 }
 
 unsafe impl Sync for TcpSocket {}
@@ -56,6 +57,7 @@ impl TcpSocket {
             local_addr: UnsafeCell::new(UNSPECIFIED_ENDPOINT),
             peer_addr: UnsafeCell::new(UNSPECIFIED_ENDPOINT),
             nonblock: AtomicBool::new(false),
+            reuse_addr: AtomicBool::new(false),
         }
     }
 
@@ -71,6 +73,7 @@ impl TcpSocket {
             local_addr: UnsafeCell::new(local_addr),
             peer_addr: UnsafeCell::new(peer_addr),
             nonblock: AtomicBool::new(false),
+            reuse_addr: AtomicBool::new(false),
         }
     }
 
@@ -116,6 +119,22 @@ impl TcpSocket {
     #[inline]
     pub fn set_nonblocking(&self, nonblocking: bool) {
         self.nonblock.store(nonblocking, Ordering::Release);
+    }
+
+    ///Returns whether this socket is in reuse address mode.
+    #[inline]
+    pub fn is_reuse_addr(&self) -> bool {
+        self.reuse_addr.load(Ordering::Acquire)
+    }
+
+    /// Moves this TCP socket into or out of reuse address mode.
+    ///
+    /// When a socket is bound, the `SO_REUSEADDR` option allows multiple sockets to be bound to the
+    /// same address if they are bound to different local addresses. This option must be set before
+    /// calling `bind`.
+    #[inline]
+    pub fn set_reuse_addr(&self, reuse_addr: bool) {
+        self.reuse_addr.store(reuse_addr, Ordering::Release);
     }
 
     /// To get the address pair of the socket.
@@ -234,6 +253,17 @@ impl TcpSocket {
                     return ax_err!(InvalidInput, "socket bind() failed: already bound");
                 }
                 self.local_addr.get().write(from_core_sockaddr(local_addr));
+            }
+            let local_endpoint = from_core_sockaddr(local_addr);
+            let bound_endpoint = self.bound_endpoint()?;
+            let handle = unsafe { self.handle.get().read() }
+                .unwrap_or_else(|| SOCKET_SET.add(SocketSetWrapper::new_tcp_socket()));
+            SOCKET_SET.with_socket_mut::<tcp::Socket, _, _>(handle, |socket| {
+                socket.set_bound_endpoint(bound_endpoint);
+            });
+
+            if !self.is_reuse_addr() {
+                SOCKET_SET.bind_check(local_endpoint.addr, local_endpoint.port)?;
             }
             Ok(())
         })
