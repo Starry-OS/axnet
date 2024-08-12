@@ -36,7 +36,7 @@ axprocess = { git = "https://github.com/Starry-OS/axprocess.git", optional = tru
 
 [dependencies.smoltcp]
 git = "https://github.com/rcore-os/smoltcp.git"
-rev = "b7134a3"
+rev = "8bf9a9a"
 default-features = false
 features = [
   "alloc", "log",   # no std
