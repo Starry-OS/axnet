@@ -148,9 +148,55 @@ impl<'a> SocketSetWrapper<'a> {
     }
 
     pub fn poll_interfaces(&self) {
-        let timestamp =
-            Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
-        #[cfg(feature = "monolithic")]
+        let timestamp = Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64);
+        
+        let mut poll_actions: Vec<Box<dyn Fn()>> = Vec::new();
+        {
+            let socket_set = self.0.lock();
+            for (handle, socket) in socket_set.iter() {
+                debug!("socket is {:?}",socket);
+                match socket {
+                    Socket::Tcp(tcp_socket) => {
+                        if let Some(remote_endpoint) = tcp_socket.remote_endpoint() {
+                            let dest_ip = remote_endpoint.addr;
+                            debug!("tcp_socket can send to {:?}", dest_ip);
+                            let self_clone = self;
+                            poll_actions.push(Box::new(move || {
+                                self_clone.route_and_poll(dest_ip, handle, timestamp);
+                            }));
+                        }
+                    },
+                    Socket::Udp(udp_socket) => {
+                        // if udp_socket.can_send() {
+                            if let Some(dest_ip) = udp_socket.endpoint().addr {
+                                debug!("udp_socket can send to {:?}", dest_ip);
+                                let self_clone = self;
+                                poll_actions.push(Box::new(move || {
+                                    self_clone.route_and_poll(dest_ip, handle, timestamp);
+                                }));
+                            }
+                        // }
+                    },
+                    Socket::Raw(raw_socket) => {
+                        debug!("socket {:?} is raw", raw_socket);
+                    },
+                    Socket::Icmp(icmp_socket) => {
+                        debug!("socket {:?} is icmp", icmp_socket);
+                    },
+                    Socket::Dns(dns_socket) => {
+                        debug!("socket {:?} is dns", dns_socket);
+                        ETH0.poll(&self.0);
+                    },
+                }
+            }
+        }
+
+        // 执行所有收集到的操作
+        for action in poll_actions {
+            action();
+        }
+
+        // // #[cfg(feature = "monolithic")]
         LOOPBACK.lock().poll(
             timestamp,
             LOOPBACK_DEV.lock().deref_mut(),
@@ -160,9 +206,36 @@ impl<'a> SocketSetWrapper<'a> {
         ETH0.poll(&self.0);
     }
 
+    pub fn route_and_poll(&self, dest_ip: IpAddress, _handle: SocketHandle, timestamp: Instant) {
+        debug!("route_and_poll {:?}", dest_ip);
+        match route_packet(dest_ip) {
+            "loopback" => {
+                LOOPBACK.lock().poll(timestamp, LOOPBACK_DEV.lock().deref_mut(), &mut self.0.lock());
+            },
+            "eth0" => {
+                ETH0.poll(&self.0);
+            },
+            _ => unreachable!(),
+        }
+    }
+
     pub fn remove(&self, handle: SocketHandle) {
         self.0.lock().remove(handle);
         debug!("socket {}: destroyed", handle);
+    }
+}
+
+fn route_packet(destination: IpAddress) -> &'static str {
+    if is_loopback_route(destination) {
+        "loopback"
+    } else {
+        // 检查是否匹配配置的回环地址
+        let loopback = LOOPBACK.lock();
+        if loopback.ip_addrs().iter().any(|cidr| cidr.contains_addr(&destination)) {
+            "loopback"
+        } else {
+            "eth0"
+        }
     }
 }
 

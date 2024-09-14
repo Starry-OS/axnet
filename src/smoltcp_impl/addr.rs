@@ -34,3 +34,18 @@ pub fn is_unspecified(ip: IpAddress) -> bool {
 
 pub const UNSPECIFIED_IP: IpAddress = IpAddress::v4(0, 0, 0, 0);
 pub const UNSPECIFIED_ENDPOINT: IpEndpoint = IpEndpoint::new(UNSPECIFIED_IP, 0);
+
+pub fn is_loopback_route(ip: IpAddress) -> bool {
+    match ip {
+        IpAddress::Ipv4(addr) => is_ipv4_loopback(addr),
+        IpAddress::Ipv6(addr) => is_ipv6_loopback(addr),
+    }
+}
+
+fn is_ipv4_loopback(addr: Ipv4Address) -> bool {
+    addr.0[0] == 127
+}
+
+fn is_ipv6_loopback(addr: Ipv6Address) -> bool {
+    addr.0 == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+}
